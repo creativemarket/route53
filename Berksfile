@@ -1,6 +1,6 @@
 #!/usr/bin/env ruby
 
-site 'https://supermarket.getchef.com/api/v1'
+source 'https://supermarket.chef.io'
 
-cookbook 'route53', path: '.'
+metadata
 cookbook 'route53_test', path: './test/integration/cookbooks/route53_test'

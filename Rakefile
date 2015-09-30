@@ -1,31 +1,18 @@
-#!/usr/bin/env rake
-require 'rake'
+# encoding: utf-8
+require 'foodcritic'
 require 'rspec/core/rake_task'
+require 'rubocop/rake_task'
 
-begin
-  require 'emeril/rake'
-rescue LoadError
-  puts ">>>>> Emeril gem not loaded, omitting tasks" unless ENV['CI']
+desc 'Run Foodcritic lint checks'
+FoodCritic::Rake::LintTask.new(:lint) do |t|
+  t.options = { fail_tags: ['any'] }
 end
 
-task :spec    => 'spec:all'
-task :default => :spec
-
-namespace :spec do
-  targets = []
-  Dir.glob('./test/integration/default/*').each do |dir|
-    next unless File.directory?(dir)
-    targets << File.basename(dir)
-  end
-
-  task :all     => targets
-  task :default => :all
-
-  targets.each do |target|
-    desc "Run serverspec tests to #{target}"
-    RSpec::Core::RakeTask.new(target.to_sym) do |t|
-      ENV['TARGET_HOST'] = target
-      t.pattern = "test/integration/default/#{target}/*_spec.rb"
-    end
-  end
+desc 'Run rubocop tests'
+RuboCop::RakeTask.new(:rubocop) do |t|
+  t.options = ['-D']
 end
+
+desc 'Run all tests'
+task test: [:rubocop, :lint]
+task default: :test

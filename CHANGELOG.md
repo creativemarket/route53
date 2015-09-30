@@ -1,3 +1,10 @@
+## v0.5.0
+* Remove nokogiri/fog dependency hell by switching to aws-sdk and rexml
+* Remove test-kitchen cruft in spec/ dir
+* Enable basic rspec/chefspec test to ensure pre-intergraion sanity
+* Add Berksfile for chefdk compatibility
+* Remove unneeded reference to session token
+* Do not require ZONE env just for testing
 ## v0.4.0
 * make "name" the name_attribute of a resource
 * depends on xml to support installing nokogiri and fog dependency

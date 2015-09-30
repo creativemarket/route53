@@ -1,11 +1,3 @@
-def aws
-  {
-  :provider => 'AWS',
-  :aws_access_key_id => new_resource.aws_access_key_id,
-  :aws_secret_access_key => new_resource.aws_secret_access_key,
-  :aws_session_token => new_resource.aws_session_token
-  }
-end
 
 def name
   @name ||= begin
@@ -26,133 +18,218 @@ def ttl
   @ttl ||= new_resource.ttl
 end
 
-def overwrite
-  @overwrite ||= new_resource.overwrite
-end
-
 def alias_target
   @alias_target ||= new_resource.alias_target
+end
+
+def health_check_id
+  @health_check_id ||= new_resource.health_check_id
+end
+
+def failover
+  @failover ||= new_resource.failover
+end
+
+def set_identifier
+  @set_identifier ||= new_resource.set_identifier
+end
+
+def overwrite?
+  @overwrite ||= new_resource.overwrite
 end
 
 def mock?
   @mock ||= new_resource.mock
 end
 
-def mock_env(connection_info)
-  Fog.mock!
-  conn = Fog::DNS.new(connection_info)
-  zone_id = conn.create_hosted_zone(name).body['HostedZone']['Id']
-  conn.zones.get(zone_id)
+def zone_id
+  @zone_id ||= new_resource.zone_id
 end
 
-def zone(connection_info)
-  @zone ||= begin
+def route53
+  @route53 ||= begin
     if mock?
-      @zone = mock_env(connection_info)
+      @route53 = Aws::Route53::Client.new(stub_responses: true)
     elsif new_resource.aws_access_key_id && new_resource.aws_secret_access_key
-      @zone = Fog::DNS.new(connection_info).zones.get( new_resource.zone_id )
+      @route53 = Aws::Route53::Client.new(
+        access_key_id: new_resource.aws_access_key_id,
+        secret_access_key: new_resource.aws_secret_access_key,
+        region: new_resource.aws_region
+      )
     else
-      Chef::Log.info "No AWS credentials supplied, going to attempt to use IAM roles instead"
-      @zone = Fog::DNS.new({ :provider => "AWS", :use_iam_profile => true }
-                             ).zones.get( new_resource.zone_id )
+      Chef::Log.info "No AWS credentials supplied, going to attempt to use automatic credentials from IAM or ENV"
+      @route53 = Aws::Route53::Client.new(
+        region: new_resource.aws_region
+      )
     end
   end
 end
 
-def record_attributes
-  common_attributes = { :name => name, :type => type }
-  common_attributes.merge(record_value_or_alias_attributes)
+def value_record_set
+  {
+    name: name,
+    type: type,
+    ttl: ttl,
+    resource_records:
+      value.sort.map{|v| {value: v} }
+  }
 end
 
-def record
-  Chef::Log.info("Getting record: #{name} #{type}")
-  records = zone(aws).records
-  records.count.zero? ? nil : records.get(name, type)
+def alias_record_set
+  {
+    name: name,
+    type: type,
+    set_identifier: set_identifier,
+    failover: failover,
+    alias_target: alias_target
+  }
 end
 
-def record_value_or_alias_attributes
-  if alias_target
-    { :alias_target => alias_target.to_hash }
+def current_value_record_set
+  # List all the resource records for this zone:
+  lrrs = route53.
+    list_resource_record_sets(
+      hosted_zone_id: "/hostedzone/#{zone_id}",
+      start_record_name: name
+    )
+
+  # Select current resource record set by name
+  current = lrrs[:resource_record_sets].
+    select{ |rr| rr[:name] == name }.first
+
+  # return as hash, converting resource record
+  # array of structs to array of hashes
+  if current
+    {
+      name: current[:name],
+      type: current[:type],
+      ttl: current[:ttl],
+      resource_records:
+        current[:resource_records].sort.map{ |rrr| rrr.to_h }
+    }
   else
-    { :value => value, :ttl => ttl }
+    {}
   end
+end
+
+def current_alias_record_set
+  # List all the resource records for this zone:
+  lrrs = route53.
+    list_resource_record_sets(
+      hosted_zone_id: "/hostedzone/#{zone_id}",
+      start_record_name: name
+    )
+
+  # Select current resource record set by name
+  current = lrrs[:resource_record_sets].
+    select{ |rr| rr[:name] == name }.first
+
+  # return as hash, converting resource record
+  # array of structs to array of hashes
+  if current
+    {
+      name: current[:name],
+      type: current[:type],
+      set_identifier: current[:set_identifier],
+      failover: current[:failover],
+      alias_target:
+        current[:alias_target].to_h
+    }
+  else
+    {}
+  end
+end
+
+def change_record(action)
+    begin
+    if alias_target
+        record_set = alias_record_set
+    else
+        record_set = value_record_set
+    end
+
+    request = {
+        hosted_zone_id: "/hostedzone/#{zone_id}",
+        change_batch: {
+            comment: "Chef Route53 Resource: #{name}",
+            changes: [
+                {
+                    action: action,
+                    resource_record_set: record_set
+                },
+            ],
+        },
+    }
+
+    if health_check_id
+        request[:change_batch][:changes][0][:resource_record_set].merge!({ health_check_id: health_check_id })
+    end
+    Chef::Log.debug "Changing record - #{action}: #{request.inspect}"
+    response = route53.change_resource_record_sets(request)
+    Chef::Log.debug "Changed record - #{action}: #{response.inspect}"
+    rescue Aws::Route53::Errors::ServiceError => e
+    Chef::Log.error "Error with #{action}request: #{request.inspect}"
+    Chef::Log.error e.message
+    end
 end
 
 action :create do
-  require 'fog'
-  require 'nokogiri'
+  require 'aws-sdk'
 
-  def create
-    begin
-      zone(aws).records.create(record_attributes)
-      Chef::Log.debug("Created record: #{record_attributes.inspect}")
-    rescue Excon::Errors::BadRequest => e
-      Chef::Log.error Nokogiri::XML( e.response.body ).xpath( "//xmlns:Message" ).text
-    end
-  end
-
-  def same_record?(record)
-    name.eql?(record.name) &&
-      same_value?(record) &&
-        ttl.eql?(record.ttl.to_i)
-  end
-
-  def same_value?(record)
-    if alias_target
-      same_alias_target?(record)
-    else
-      value.sort == record.value.sort
-    end
-  end
-
-  def same_alias_target?(record)
-    alias_target &&
-      record.alias_target &&
-      (alias_target['dns_name'] == record.alias_target['DNSName'].gsub(/\.$/,''))
-  end
-
-  if record.nil?
-    create
-    Chef::Log.info "Record created: #{name}"
-  elsif !same_record?(record)
-    unless overwrite == false
-      record.destroy
-      create
-      Chef::Log.info "Record modified: #{name}"
-   else
-      Chef::Log.info "Record #{name} should have been modified, but overwrite is set to false."
-      Chef::Log.debug "Current value: #{record.value.first}"
-      Chef::Log.debug "Desired value: #{value}"
-    end
-  else Chef::Log.info "There is nothing to update."
+  case alias_target
+  when nil
+      Chef::Log.debug "current_value_record_set = #{current_value_record_set}"
+      Chef::Log.debug "value_record_set = #{value_record_set}"
+      if current_value_record_set == value_record_set
+        Chef::Log.debug "Current resources match specification"
+      else
+        if overwrite?
+          change_record "UPSERT"
+          Chef::Log.info "Record created/modified: #{name}"
+        else
+          change_record "CREATE"
+          Chef::Log.info "Record created: #{name}"
+        end
+      end
+  else
+      Chef::Log.debug "current_alias_record_set = #{current_alias_record_set}"
+      Chef::Log.debug "alias_record_set = #{alias_record_set}"
+      if current_alias_record_set == alias_record_set
+        Chef::Log.debug "Current resources match specification"
+      else
+        if overwrite?
+          change_record "UPSERT"
+          Chef::Log.info "Record created/modified: #{name}"
+        else
+          change_record "CREATE"
+          Chef::Log.info "Record created: #{name}"
+        end
+      end
   end
 end
 
 action :delete do
-  require 'fog'
-  require 'nokogiri'
+  require 'aws-sdk'
 
   if mock?
-    # Make some fake data so that we can successfully delete when testing.
-    zone(aws).records.create(
-      name: name,
-      type: type,
-      value: ['1.2.3.4'],
-      ttyl: 300
+    mock_resource_record_set = {
+      :name=>"www.mock.com.",
+      :type=>"A",
+      :ttl=>300,
+      :resource_records=>[{:value=>"192.168.1.2"}]
+    }
+
+    route53.stub_responses(
+      :list_resource_record_sets,
+      { resource_record_sets: [ mock_resource_record_set ] }
     )
+
   end
 
-  def delete
-    zone(aws).records.get(name, type).destroy
-    Chef::Log.debug("Destroyed record: #{name} #{type}")
-  rescue Excon::Errors::BadRequest => e
-    Chef::Log.error Nokogiri::XML(e.response.body).xpath('//xmlns:Message').text
-  end
-
-  if record.nil?
+  if current_value_record_set.nil? && current_alias_record_set.nil?
     Chef::Log.info 'There is nothing to delete.'
   else
-    delete
+    change_record "DELETE"
     Chef::Log.info "Record deleted: #{name}"
   end
 end
