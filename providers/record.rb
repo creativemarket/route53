@@ -122,7 +122,7 @@ def current_alias_record_set
 
   # Select current resource record set by name
   current = lrrs[:resource_record_sets].
-    select{ |rr| rr[:name] == name }.first
+    select{ |rr| rr[:name] == name && rr[:set_identifier] == set_identifier }.first
 
   # return as hash, converting resource record
   # array of structs to array of hashes
@@ -164,7 +164,6 @@ def change_record(action)
     if health_check_id
         request[:change_batch][:changes][0][:resource_record_set].merge!({ health_check_id: health_check_id })
     end
-    Chef::Log.debug "Changing record - #{action}: #{request.inspect}"
     response = route53.change_resource_record_sets(request)
     Chef::Log.debug "Changed record - #{action}: #{response.inspect}"
     rescue Aws::Route53::Errors::ServiceError => e
@@ -173,37 +172,31 @@ def change_record(action)
     end
 end
 
+def push_changes
+    if overwrite?
+      change_record "UPSERT"
+      Chef::Log.info "Record created/modified: #{name}"
+    else
+      change_record "CREATE"
+      Chef::Log.info "Record created: #{name}"
+    end
+end
+
 action :create do
   require 'aws-sdk'
 
   case alias_target
   when nil
-      Chef::Log.debug "current_value_record_set = #{current_value_record_set}"
-      Chef::Log.debug "value_record_set = #{value_record_set}"
       if current_value_record_set == value_record_set
         Chef::Log.debug "Current resources match specification"
       else
-        if overwrite?
-          change_record "UPSERT"
-          Chef::Log.info "Record created/modified: #{name}"
-        else
-          change_record "CREATE"
-          Chef::Log.info "Record created: #{name}"
-        end
+          push_changes
       end
   else
-      Chef::Log.debug "current_alias_record_set = #{current_alias_record_set}"
-      Chef::Log.debug "alias_record_set = #{alias_record_set}"
       if current_alias_record_set == alias_record_set
         Chef::Log.debug "Current resources match specification"
       else
-        if overwrite?
-          change_record "UPSERT"
-          Chef::Log.info "Record created/modified: #{name}"
-        else
-          change_record "CREATE"
-          Chef::Log.info "Record created: #{name}"
-        end
+        push_changes
       end
   end
 end
