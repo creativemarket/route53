@@ -187,12 +187,16 @@ action :create do
 
   case alias_target
   when nil
+      Chef::Log.debug "current_value_record_set = #{current_value_record_set}"
+      Chef::Log.debug "value_record_set = #{value_record_set}"
       if current_value_record_set == value_record_set
         Chef::Log.debug "Current resources match specification"
       else
           push_changes
       end
   else
+      Chef::Log.debug "current_alias_record_set = #{current_alias_record_set}"
+      Chef::Log.debug "alias_record_set = #{alias_record_set}"
       if current_alias_record_set == alias_record_set
         Chef::Log.debug "Current resources match specification"
       else

@@ -14,5 +14,5 @@ attribute :overwrite,             :kind_of => [ TrueClass, FalseClass ], :defaul
 attribute :alias_target,          :kind_of => [ Hash, NilClass]
 attribute :failover,			  :kind_of => [String, NilClass]
 attribute :set_identifier,		  :kind_of => [String, NilClass]
-attribute :health_check_id,		  :kind_of => [String, NilClass]
+attribute :health_check_id,		  :kind_of => [String, NilClass], :default => nil
 attribute :mock,                  kind_of: [TrueClass, FalseClass], default: false
