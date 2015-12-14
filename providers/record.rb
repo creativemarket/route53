@@ -42,6 +42,10 @@ def mock?
   @mock ||= new_resource.mock
 end
 
+def weight
+  @weight ||= new_resource.weight
+end
+
 def zone_id
   @zone_id ||= new_resource.zone_id
 end
@@ -70,6 +74,7 @@ def value_record_set
     name: name,
     type: type,
     ttl: ttl,
+    weight: weight,
     resource_records:
       value.sort.map{|v| {value: v} }
   }
