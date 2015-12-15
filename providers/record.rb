@@ -73,8 +73,8 @@ def value_record_set
   {
     name: name,
     type: type,
+    set_identifier: set_identifier,
     ttl: ttl,
-    weight: weight,
     resource_records:
       value.sort.map{|v| {value: v} }
   }
@@ -108,6 +108,7 @@ def current_value_record_set
     {
       name: current[:name],
       type: current[:type],
+      set_identifier: current[:set_identifier],
       ttl: current[:ttl],
       resource_records:
         current[:resource_records].sort.map{ |rrr| rrr.to_h }
@@ -169,10 +170,16 @@ def change_record(action)
     if health_check_id
         request[:change_batch][:changes][0][:resource_record_set].merge!({ health_check_id: health_check_id })
     end
+
+    if weight
+        request[:change_batch][:changes][0][:resource_record_set].merge!({ weight: weight })
+    end
+
+    puts request
     response = route53.change_resource_record_sets(request)
     Chef::Log.debug "Changed record - #{action}: #{response.inspect}"
     rescue Aws::Route53::Errors::ServiceError => e
-    Chef::Log.error "Error with #{action}request: #{request.inspect}"
+    Chef::Log.error "Error with #{action} request: #{request.inspect}"
     Chef::Log.error e.message
     end
 end

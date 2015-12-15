@@ -5,8 +5,8 @@ default_action :create
 attribute :name,				  	:kind_of => String, :required => true, :name_attribute => true
 attribute :value,				 	:kind_of => [ String, Array ]
 attribute :type,				  	:kind_of => String, :required => true
-attribute :ttl,				   		:kind_of => Integer, :default => 120
-attribute :weight,					:kind_of => Integer, :default => 0
+attribute :ttl,				   		:kind_of => Integer, :default => 30
+attribute :weight,					:kind_of => Integer
 attribute :zone_id,			   		:kind_of => String
 attribute :aws_access_key_id,	 	:kind_of => String
 attribute :aws_secret_access_key, 	:kind_of => String
