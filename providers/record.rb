@@ -73,7 +73,6 @@ def value_record_set
   {
     name: name,
     type: type,
-    set_identifier: set_identifier,
     ttl: ttl,
     resource_records:
       value.sort.map{|v| {value: v} }
@@ -100,19 +99,19 @@ def current_value_record_set
 
   # Select current resource record set by name
   current = lrrs[:resource_record_sets].
-    select{ |rr| rr[:name] == name }.first
+    select{ |rr| rr[:name] == name && rr[:set_identifier] == set_identifier }.first
 
   # return as hash, converting resource record
   # array of structs to array of hashes
   if current
-    {
+    cvrs = {
       name: current[:name],
       type: current[:type],
-      set_identifier: current[:set_identifier],
       ttl: current[:ttl],
       resource_records:
         current[:resource_records].sort.map{ |rrr| rrr.to_h }
     }
+    # cvrs[:change_batch][:changes][0][:resource_record_set].merge!({ set_identifier: set_identifier })
   else
     {}
   end
@@ -173,6 +172,10 @@ def change_record(action)
 
     if weight
         request[:change_batch][:changes][0][:resource_record_set].merge!({ weight: weight })
+    end
+
+    if set_identifier
+        request[:change_batch][:changes][0][:resource_record_set].merge!({ set_identifier: set_identifier })
     end
 
     puts request
