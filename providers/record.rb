@@ -223,6 +223,15 @@ end
 action :delete do
   require 'aws-sdk'
 
+  case alias_target
+  when nil
+      Chef::Log.debug "current_value_record_set = #{current_value_record_set}"
+      Chef::Log.debug "value_record_set = #{value_record_set}"
+  else
+      Chef::Log.debug "current_alias_record_set = #{current_alias_record_set}"
+      Chef::Log.debug "alias_record_set = #{alias_record_set}"
+  end
+
   if mock?
     mock_resource_record_set = {
       :name=>"www.mock.com.",
